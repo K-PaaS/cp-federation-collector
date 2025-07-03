@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cp-portal-federation-metric-api
+  namespace: cp-portal
+spec:
+  selector:
+    matchLabels:
+      app: cp-portal-federation-metric-api
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: cp-portal-federation-metric-api
+    spec:
+      containers:
+        - name: cp-portal-federation-metric-api
+          image: harbor.115.68.198.189.nip.io/fed/cp-portal-federation-metric-api:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: cp-portal-federation-config
+            - configMapRef:
+                name: cp-portal-config
+            - secretRef:
+                name: cp-portal-federation-secret
+            - secretRef:
+                name: cp-portal-secret
+      imagePullSecrets:
+        - name: cp-regcred
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cp-portal-federation-config
+  namespace: cp-portal
+data:
+  HOST_CLUSTER_NAME: ""
+  NATS_BUCKET_NAME: ""
+  NATS_SUBJECT_NAME: ""
+  NATS_URL: ""
+  KARMADA_API: ""
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: cp-portal-federation-secret
+  namespace: cp-portal
+data:
+  KARMADA_TOKEN: ""
+  NATS_ID: ""
+  NATS_PASSWORD: ""
