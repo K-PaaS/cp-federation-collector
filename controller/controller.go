@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"federation-metric-api/config"
 	"federation-metric-api/internal/adapter"
 	"federation-metric-api/internal/karmada"
 	"federation-metric-api/internal/metricscollector"
@@ -12,19 +13,22 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"log"
-	"os"
 	"time"
 )
 
-// var hostClusterName = "host-cluster"
-var hostClusterName = os.Getenv("HOST_CLUSTER_NAME")
+var hostClusterName string
 
-// var bucketName = "recent_values"
-var natsBucketName = os.Getenv("NATS_BUCKET_NAME")
+var natsBucketName string
 var repeatTime time.Duration = 30
 
-// cluster.metrics
-var natsSubjectName = os.Getenv("NATS_SUBJECT_NAME")
+var natsSubjectName string
+
+func init() {
+	hostClusterName = config.Env.HostClusterName
+	natsBucketName = config.Env.NatsBucketName
+	natsSubjectName = config.Env.NatsSubjectName
+
+}
 
 func RepeatMetric(ctx context.Context) {
 	ticker := time.NewTicker(repeatTime * time.Second)
@@ -119,7 +123,6 @@ func RepeatMetric(ctx context.Context) {
 				Time:                time.Now().UTC(),
 			}
 			data, _ := json.Marshal(metricStatus)
-			//err := nc.Publish("cluster.metrics", data)
 
 			_, err = kv.Put(natsSubjectName, data)
 			if err != nil {
@@ -127,9 +130,6 @@ func RepeatMetric(ctx context.Context) {
 			} else {
 				log.Printf("Metric transfer complete")
 			}
-
-			//latest, _ := kv.Get("cluster.metrics")
-			//fmt.Println(string(latest.Value()))
 		}
 	}
 }

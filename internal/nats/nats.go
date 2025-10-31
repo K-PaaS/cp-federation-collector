@@ -1,9 +1,9 @@
 package nats
 
 import (
+	"federation-metric-api/config"
 	"github.com/nats-io/nats.go"
 	"log"
-	"os"
 )
 
 type Client struct {
@@ -15,7 +15,7 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	nc, err := nats.Connect(os.Getenv("NATS_URL"), nats.UserInfo(os.Getenv("NATS_ID"), os.Getenv("NATS_PASSWORD")))
+	nc, err := nats.Connect(config.Env.NatsUrl, nats.UserInfo(config.Env.NatsId, config.Env.NatsPassword))
 	if err != nil {
 		log.Printf("NATS 연결 실패: %v", err)
 		return nil
@@ -26,9 +26,9 @@ func NewClient() *Client {
 		return nil
 	}
 	return &Client{
-		api:        os.Getenv("NATS_URL"),
-		id:         os.Getenv("NATS_ID"),
-		password:   os.Getenv("NATS_PASSWORD"),
+		api:        config.Env.NatsUrl,
+		id:         config.Env.NatsId,
+		password:   config.Env.NatsPassword,
 		natsClient: nc,
 		jetStream:  js,
 	}

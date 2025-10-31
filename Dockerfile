@@ -12,6 +12,7 @@ COPY go.mod go.sum main.go ./
 COPY controller ./controller
 COPY internal ./internal
 COPY model ./model
+COPY config  ./config
 
 RUN go mod download
 
@@ -26,6 +27,7 @@ RUN cp /build/main .
 FROM scratch
 
 COPY --from=builder /dist/main .
+COPY config.env .
 
 ENV HOST_CLUSTER_NAME=${HOST_CLUSTER_NAME} \
     KARMADA_API=${KARMADA_API} \

@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"federation-metric-api/config"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 )
 
 type Client struct {
@@ -23,8 +23,8 @@ func NewClient() *Client {
 		},
 	}
 	return &Client{
-		api:    os.Getenv("KARMADA_API"),
-		token:  os.Getenv("KARMADA_TOKEN"),
+		api:    config.Env.KarmadaApi,
+		token:  config.Env.KarmadaToken,
 		client: &http.Client{Transport: tr},
 	}
 }
