@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"federation-metric-api/controller"
+	_ "federation-metric-api/docs"
 	"fmt"
+	echoSwagger "github.com/swaggo/http-swagger"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,6 +29,8 @@ func main() {
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprintln(w, "ready")
 		})
+		mux.Handle("/swagger/", echoSwagger.WrapHandler)
+
 		http.ListenAndServe(":8001", mux)
 	}()
 
@@ -36,6 +40,6 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	fmt.Println("Shutdown signal received.")
-	cancel()
+	//cancel()
 	time.Sleep(2 * time.Second)
 }
