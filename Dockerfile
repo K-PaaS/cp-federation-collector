@@ -13,6 +13,7 @@ COPY controller ./controller
 COPY internal ./internal
 COPY model ./model
 COPY config  ./config
+COPY docs  ./docs
 
 RUN go mod download
 

@@ -61,8 +61,46 @@ func RepeatMetric(ctx context.Context) {
 
 		var memberClusterList []model.MemberClusterStatus
 		for _, ci := range clusterInfos {
+			if ci.ClusterID == hostClusterName {
+				cfg := &rest.Config{
+					Host:        ci.APIServerURL,
+					BearerToken: ci.BearerToken,
+					TLSClientConfig: rest.TLSClientConfig{
+						Insecure: true,
+					},
+				}
+				clientset, err := kubernetes.NewForConfig(cfg)
+				if err != nil {
+					log.Printf("%s 클러스터 clientset 생성 실패: %v", ci.ClusterID, err)
+					continue
+				}
+
+				ClCpuRatio, ClMemRatio, err = metricscollector.CollectMetric(clientset)
+				//Status 구하는 로직
+				hostCluster.Status = metricscollector.NodeHealthCheck(clientset)
+				//Node Summary 구하는 로직
+				totalNum, readyNum := metricscollector.NodeSummary(clientset)
+				hostCluster.NodeSummary = model.NodeSummary{
+					TotalNum: totalNum,
+					ReadyNum: readyNum,
+				}
+				//RequestUsage 구하는 로직
+				requestCPURatio, requestMemRatio, _ := metricscollector.CollectRequestMetric(clientset)
+				hostCluster.RequestUsage = model.NodeUsageFloat{
+					Cpu:    util.Round(requestCPURatio, 2), //fmt.Sprintf("%.2f", requestCPURatio),
+					Memory: util.Round(requestMemRatio, 2), //.Sprintf("%.2f", requestMemRatio),
+				}
+
+				hostCluster.ClusterId = hostClusterName
+				hostCluster.RealTimeUsage = model.NodeUsageFloat{
+					Cpu:    util.Round(ClCpuRatio, 2), //fmt.Sprintf("%.2f", ClCpuRatio),
+					Memory: util.Round(ClMemRatio, 2), //fmt.Sprintf("%.2f", ClMemRatio),
+				}
+
+				continue
+			}
 			for _, member := range memberClusters {
-				if member.Endpoint == ci.APIServerURL || ci.ClusterID == hostClusterName {
+				if member.Endpoint == ci.APIServerURL || ci.ClusterID != hostClusterName {
 					cfg := &rest.Config{
 						Host:        ci.APIServerURL,
 						BearerToken: ci.BearerToken,
@@ -78,36 +116,14 @@ func RepeatMetric(ctx context.Context) {
 
 					ClCpuRatio, ClMemRatio, err = metricscollector.CollectMetric(clientset)
 
-					if ci.ClusterID == hostClusterName {
-						//Status 구하는 로직
-						hostCluster.Status = metricscollector.NodeHealthCheck(clientset)
-						//Node Summary 구하는 로직
-						totalNum, readyNum := metricscollector.NodeSummary(clientset)
-						hostCluster.NodeSummary = model.NodeSummary{
-							TotalNum: totalNum,
-							ReadyNum: readyNum,
-						}
-						//RequestUsage 구하는 로직
-						requestCPURatio, requestMemRatio, _ := metricscollector.CollectRequestMetric(clientset)
-						hostCluster.RequestUsage = model.NodeUsageFloat{
-							Cpu:    util.Round(requestCPURatio, 2), //fmt.Sprintf("%.2f", requestCPURatio),
-							Memory: util.Round(requestMemRatio, 2), //.Sprintf("%.2f", requestMemRatio),
-						}
-
-						hostCluster.ClusterId = hostClusterName
-						hostCluster.RealTimeUsage = model.NodeUsageFloat{
+					memberClusterList = append(memberClusterList, model.MemberClusterStatus{
+						ClusterId: ci.ClusterID,
+						RealTimeUsage: model.NodeUsageFloat{
 							Cpu:    util.Round(ClCpuRatio, 2), //fmt.Sprintf("%.2f", ClCpuRatio),
-							Memory: util.Round(ClMemRatio, 2), //fmt.Sprintf("%.2f", ClMemRatio),
-						}
-					} else {
-						memberClusterList = append(memberClusterList, model.MemberClusterStatus{
-							ClusterId: ci.ClusterID,
-							RealTimeUsage: model.NodeUsageFloat{
-								Cpu:    util.Round(ClCpuRatio, 2), //fmt.Sprintf("%.2f", ClCpuRatio),
-								Memory: util.Round(ClMemRatio, 2), // fmt.Sprintf("%.2f", ClMemRatio),
-							},
-						})
-					}
+							Memory: util.Round(ClMemRatio, 2), // fmt.Sprintf("%.2f", ClMemRatio),
+						},
+					})
+
 					break
 				}
 			}
