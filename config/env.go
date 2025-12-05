@@ -3,6 +3,7 @@ package config
 import (
 	"github.com/gofiber/fiber/v2/log"
 	"github.com/spf13/viper"
+	"os"
 )
 
 var Env *envConfigs
@@ -31,6 +32,10 @@ func loadEnvVariables() (config *envConfigs) {
 	viper.SetConfigType("env")
 
 	if err := viper.ReadInConfig(); err != nil {
+		if os.Getenv("UNIT_TEST") == "1" {
+			log.Warnf("Skipping config file read in test: %v", err)
+			return &envConfigs{}
+		}
 		log.Fatal("Error reading env file", err)
 	}
 	if err := viper.Unmarshal(&config); err != nil {

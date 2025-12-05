@@ -1,20 +1,33 @@
 package adapter
 
 import (
+	"fmt"
+
 	"federation-metric-api/internal/vault"
 	"federation-metric-api/model"
-	"log"
 )
+
+type VaultClusterInfoClient interface {
+	GetClusterInfos() ([]model.ClusterCredential, error)
+}
+
+var newVaultClient = func(cfg *vault.Config) (VaultClusterInfoClient, error) {
+	return vault.NewClient(cfg)
+}
+
+func getClusterInfosFrom(c VaultClusterInfoClient) ([]model.ClusterCredential, error) {
+	return c.GetClusterInfos()
+}
 
 func GetClusterInfos() ([]model.ClusterCredential, error) {
 	vaultCfg := vault.ConfigFromEnv()
-	vaultClient, err := vault.NewClient(vaultCfg)
+	vaultClient, err := newVaultClient(vaultCfg)
 	if err != nil {
-		log.Fatalf("Vault 클라이언트 생성 실패: %v", err)
+		return nil, fmt.Errorf("failed to create vault client: %w", err)
 	}
-	clusterInfos, err := vaultClient.GetClusterInfos()
+	clusterInfos, err := getClusterInfosFrom(vaultClient)
 	if err != nil {
-		log.Fatalf("클러스터 정보 조회 실패: %v", err)
+		return nil, fmt.Errorf("failed to load cluster infos: %w", err)
 	}
-	return clusterInfos, err
+	return clusterInfos, nil
 }
