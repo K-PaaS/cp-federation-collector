@@ -10,10 +10,32 @@ import (
 	"federation-metric-api/internal/nats"
 	"federation-metric-api/internal/util"
 	"federation-metric-api/model"
+	outnats "github.com/nats-io/nats.go"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"log"
 	"time"
+)
+
+type KarmadaClient interface {
+	GetMemberClusters(ctx context.Context) ([]karmada.MemberCluster, error)
+}
+
+type NatsClient interface {
+	CreateKeyValue(bucket string) (outnats.KeyValue, error)
+	KeyValue(bucket string) (outnats.KeyValue, error)
+}
+
+var (
+	NewKarmadaClient = func() KarmadaClient { return karmada.NewClient() }
+	NewNatsClient    = func() NatsClient { return nats.NewClient() }
+	GetClusterInfos  = adapter.GetClusterInfos
+
+	NewKubeClient            = func(cfg *rest.Config) (kubernetes.Interface, error) { return kubernetes.NewForConfig(cfg) }
+	CollectMetricFunc        = metricscollector.CollectMetric
+	CollectRequestMetricFunc = metricscollector.CollectRequestMetric
+	NodeHealthCheckFunc      = metricscollector.NodeHealthCheck
+	NodeSummaryFunc          = metricscollector.NodeSummary
 )
 
 var hostClusterName string
@@ -34,8 +56,8 @@ func RepeatMetric(ctx context.Context) {
 	ticker := time.NewTicker(repeatTime * time.Second)
 	defer ticker.Stop()
 
-	karmadaClient := karmada.NewClient()
-	natsClient := nats.NewClient()
+	karmadaClient := NewKarmadaClient()
+	natsClient := NewNatsClient()
 	if natsClient == nil {
 
 	}
@@ -49,7 +71,7 @@ func RepeatMetric(ctx context.Context) {
 	}
 
 	for {
-		clusterInfos, err := adapter.GetClusterInfos()
+		clusterInfos, err := GetClusterInfos()
 		memberClusters, err := karmadaClient.GetMemberClusters(ctx)
 		if err != nil {
 			log.Fatalf("Karmada member 클러스터 조회 실패: %v", err)
@@ -69,23 +91,23 @@ func RepeatMetric(ctx context.Context) {
 						Insecure: true,
 					},
 				}
-				clientset, err := kubernetes.NewForConfig(cfg)
+				clientset, err := NewKubeClient(cfg)
 				if err != nil {
 					log.Printf("%s 클러스터 clientset 생성 실패: %v", ci.ClusterID, err)
 					continue
 				}
 
-				ClCpuRatio, ClMemRatio, err = metricscollector.CollectMetric(clientset)
+				ClCpuRatio, ClMemRatio, err = CollectMetricFunc(clientset)
 				//Status 구하는 로직
-				hostCluster.Status = metricscollector.NodeHealthCheck(clientset)
+				hostCluster.Status = NodeHealthCheckFunc(clientset)
 				//Node Summary 구하는 로직
-				totalNum, readyNum := metricscollector.NodeSummary(clientset)
+				totalNum, readyNum := NodeSummaryFunc(clientset)
 				hostCluster.NodeSummary = model.NodeSummary{
 					TotalNum: totalNum,
 					ReadyNum: readyNum,
 				}
 				//RequestUsage 구하는 로직
-				requestCPURatio, requestMemRatio, _ := metricscollector.CollectRequestMetric(clientset)
+				requestCPURatio, requestMemRatio, _ := CollectRequestMetricFunc(clientset)
 				hostCluster.RequestUsage = model.NodeUsageFloat{
 					Cpu:    util.Round(requestCPURatio, 2), //fmt.Sprintf("%.2f", requestCPURatio),
 					Memory: util.Round(requestMemRatio, 2), //.Sprintf("%.2f", requestMemRatio),
@@ -108,13 +130,13 @@ func RepeatMetric(ctx context.Context) {
 							Insecure: true,
 						},
 					}
-					clientset, err := kubernetes.NewForConfig(cfg)
+					clientset, err := NewKubeClient(cfg)
 					if err != nil {
 						log.Printf("%s 클러스터 clientset 생성 실패: %v", ci.ClusterID, err)
 						continue
 					}
 
-					ClCpuRatio, ClMemRatio, err = metricscollector.CollectMetric(clientset)
+					ClCpuRatio, ClMemRatio, err = CollectMetricFunc(clientset)
 
 					memberClusterList = append(memberClusterList, model.MemberClusterStatus{
 						ClusterId: ci.ClusterID,

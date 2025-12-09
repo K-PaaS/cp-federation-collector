@@ -48,29 +48,58 @@ func NewClient(cfg *Config) (*Client, error) {
 	return &Client{api: client}, nil
 }
 
+func extractClusterInfos(keys []interface{}, readSecret func(path string) (*api.Secret, error)) []model.ClusterCredential {
+	var infos []model.ClusterCredential
+	for _, key := range keys {
+		path := fmt.Sprintf("secret/data/cluster/%s", key.(string))
+		secret, err := readSecret(path)
+		if err != nil || secret == nil || secret.Data == nil || secret.Data["data"] == nil {
+			continue
+		}
+		data, ok := secret.Data["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		apiURL, ok := data["clusterApiUrl"].(string)
+		if !ok {
+			continue
+		}
+		token, ok := data["clusterToken"].(string)
+		if !ok {
+			continue
+		}
+
+		infos = append(infos, model.ClusterCredential{
+			ClusterID:    strings.TrimSuffix(key.(string), "/"),
+			APIServerURL: apiURL,
+			BearerToken:  token,
+		})
+	}
+	return infos
+}
+
+var (
+	logicalList = func(c *api.Client, path string) (*api.Secret, error) {
+		return c.Logical().List(path)
+	}
+	logicalRead = func(c *api.Client, path string) (*api.Secret, error) {
+		return c.Logical().Read(path)
+	}
+)
+
 func (c *Client) GetClusterInfos() ([]model.ClusterCredential, error) {
-	secrets, err := c.api.Logical().List("secret/metadata/cluster")
+	secrets, err := logicalList(c.api, "secret/metadata/cluster")
 	if err != nil {
 		return nil, err
 	}
 
-	var infos []model.ClusterCredential
-	keys := secrets.Data["keys"].([]interface{})
-	for _, key := range keys {
-		path := fmt.Sprintf("secret/data/cluster/%s", key.(string))
-		secret, err := c.api.Logical().Read(path)
-		if err != nil || secret == nil || secret.Data == nil || secret.Data["data"] == nil {
-			continue
-		}
-		data := secret.Data["data"].(map[string]interface{})
-		clusterApiUrl := data["clusterApiUrl"].(string)
-
-		infos = append(infos, model.ClusterCredential{
-			ClusterID:    strings.TrimSuffix(key.(string), "/"),
-			APIServerURL: clusterApiUrl,
-			BearerToken:  data["clusterToken"].(string),
-		})
-
+	keys, ok := secrets.Data["keys"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for keys")
 	}
+
+	infos := extractClusterInfos(keys, func(path string) (*api.Secret, error) {
+		return logicalRead(c.api, path)
+	})
 	return infos, nil
 }

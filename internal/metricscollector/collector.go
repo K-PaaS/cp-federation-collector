@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"federation-metric-api/model"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -11,9 +12,26 @@ import (
 	"strconv"
 )
 
+var (
+	getNodeListRaw = func(client kubernetes.Interface) ([]byte, error) {
+		return client.NodeV1().RESTClient().Get().AbsPath("api/v1/nodes").DoRaw(context.TODO())
+	}
+	getNodeMetricsRaw = func(client kubernetes.Interface) ([]byte, error) {
+		return client.NodeV1().RESTClient().Get().AbsPath("apis/metrics.k8s.io/v1beta1/nodes").DoRaw(context.TODO())
+	}
+	listPodsOnNode = func(client kubernetes.Interface, nodeName string) (*corev1.PodList, error) {
+		return client.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
+			FieldSelector: fields.OneTermEqualSelector("spec.nodeName", nodeName).String(),
+		})
+	}
+	getHealthzRaw = func(client kubernetes.Interface) ([]byte, error) {
+		return client.Discovery().RESTClient().Get().AbsPath("/healthz").DoRaw(context.TODO())
+	}
+)
+
 func CollectRequestMetric(clientset kubernetes.Interface) (float64, float64, error) {
 	var node model.NodeModel
-	nodeData, err := clientset.NodeV1().RESTClient().Get().AbsPath("api/v1/nodes").DoRaw(context.TODO())
+	nodeData, err := getNodeListRaw(clientset)
 	if err != nil {
 		return -1, -1, err
 	}
@@ -26,9 +44,7 @@ func CollectRequestMetric(clientset kubernetes.Interface) (float64, float64, err
 	totalRequestCPU := resource.NewQuantity(0, resource.DecimalSI)
 	totalRequestMem := resource.NewQuantity(0, resource.BinarySI)
 	for _, i := range node.Items {
-		podList, _ := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
-			FieldSelector: fields.OneTermEqualSelector("spec.nodeName", i.MetaData.NodeName).String(),
-		})
+		podList, _ := listPodsOnNode(clientset, i.MetaData.NodeName)
 		totalNodeRequestCPU := resource.NewQuantity(0, resource.DecimalSI)
 		totalNodeRequestMem := resource.NewQuantity(0, resource.BinarySI)
 		for _, pod := range podList.Items {
@@ -60,14 +76,14 @@ func CollectMetric(clientset kubernetes.Interface) (float64, float64, error) {
 	var CpuN float64 = 1000000000
 
 	var nodeMetric model.NodeMetricModel
-	nodeMetricData, err := clientset.NodeV1().RESTClient().Get().AbsPath("apis/metrics.k8s.io/v1beta1/nodes").DoRaw(context.TODO())
+	nodeMetricData, err := getNodeMetricsRaw(clientset)
 	if err != nil {
 		return -1, -1, err
 	}
 	err = json.Unmarshal(nodeMetricData, &nodeMetric)
 
 	var node model.NodeModel
-	nodeData, err := clientset.NodeV1().RESTClient().Get().AbsPath("api/v1/nodes").DoRaw(context.TODO())
+	nodeData, err := getNodeListRaw(clientset)
 	if err != nil {
 		return -1, -1, err
 	}
@@ -107,7 +123,7 @@ func CollectMetric(clientset kubernetes.Interface) (float64, float64, error) {
 }
 
 func NodeHealthCheck(clientset kubernetes.Interface) string {
-	content, err := clientset.Discovery().RESTClient().Get().AbsPath("/healthz").DoRaw(context.TODO())
+	content, err := getHealthzRaw(clientset)
 	if err != nil {
 		return "Unknown"
 	}
@@ -118,23 +134,29 @@ func NodeHealthCheck(clientset kubernetes.Interface) string {
 	return "True"
 }
 
-func NodeSummary(clientset kubernetes.Interface) (int, int) {
-	var node model.NodeModel
-	nodeData, err := clientset.NodeV1().RESTClient().Get().AbsPath("api/v1/nodes").DoRaw(context.TODO())
-	if err != nil {
-		return -1, -1
-	}
-	err = json.Unmarshal(nodeData, &node)
-	if err != nil {
-		return -1, -1
-	}
-	var readyNum = 0
+func CountReady(node model.NodeModel) (int, int) {
+	total := len(node.Items)
+	ready := 0
+
 	for _, item := range node.Items {
 		for _, condition := range item.Status.Conditions {
-			if (condition.Type == "Ready") && (condition.Status == "True") {
-				readyNum++
+			if condition.Type == "Ready" && condition.Status == "True" {
+				ready++
+				break
 			}
 		}
 	}
-	return len(node.Items), readyNum
+	return total, ready
+}
+
+func NodeSummary(clientset kubernetes.Interface) (int, int) {
+	var node model.NodeModel
+	data, err := getNodeListRaw(clientset)
+	if err != nil {
+		return -1, -1
+	}
+	if err := json.Unmarshal(data, &node); err != nil {
+		return -1, -1
+	}
+	return CountReady(node)
 }
